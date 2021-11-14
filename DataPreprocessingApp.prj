@@ -1,0 +1,68 @@
+<deployment-project plugin="plugin.apptool" plugin-version="1.0">
+  <configuration build-checksum="1055027203" file="D:\Simon\Desktop\MATLAB_DDAA_Updated\DataProcessingApp\DDAA_DataPreparationTool\DataPreprocessingApp.prj" location="D:\Simon\Desktop\MATLAB_DDAA_Updated\DataProcessingApp\DDAA_DataPreparationTool" name="DataPreprocessingApp" target="target.mlapps" target-name="Package App">
+    <param.appname>DataPreprocessingApp</param.appname>
+    <param.authnamewatermark>Simon Johansson</param.authnamewatermark>
+    <param.email />
+    <param.company />
+    <param.icon />
+    <param.icons />
+    <param.summary>Load folder with .csv files.
+Export Data &amp; Label files.</param.summary>
+    <param.description>Used to load all recoreded data from the DDAA project and then select what objects and a what timestep to export a data and label vector.</param.description>
+    <param.screenshot />
+    <param.version>1.1</param.version>
+    <param.products.name />
+    <param.products.id />
+    <param.products.version />
+    <param.platforms />
+    <param.output>C:\Users\Simon\OneDrive\Dokument\Exjobb - Data Driven Adaptive Autonomy\Implementation\DataPreprocessingApp</param.output>
+    <param.guid>febeb2f6-5c39-4ba8-b8fb-d4ad7f2a03bc</param.guid>
+    <unset>
+      <param.email />
+      <param.company />
+      <param.icon />
+      <param.icons />
+      <param.screenshot />
+      <param.products.name />
+      <param.products.id />
+      <param.products.version />
+      <param.platforms />
+    </unset>
+    <fileset.main>
+      <file>${PROJECT_ROOT}\DataPreprocessingApp.mlapp</file>
+    </fileset.main>
+    <fileset.depfun />
+    <fileset.resources />
+    <fileset.package />
+    <build-deliverables>
+      <file location="C:\Users\Simon\OneDrive\Dokument\Exjobb - Data Driven Adaptive Autonomy\Implementation" name="DataPreprocessingApp" optional="false">C:\Users\Simon\OneDrive\Dokument\Exjobb - Data Driven Adaptive Autonomy\Implementation\DataPreprocessingApp</file>
+    </build-deliverables>
+    <workflow />
+    <matlab>
+      <root>D:\Program\Universitetet\MATLAB\R2020a</root>
+      <toolboxes>
+        <toolbox name="neuralnetwork" />
+      </toolboxes>
+      <toolbox>
+        <neuralnetwork>
+          <enabled>true</enabled>
+        </neuralnetwork>
+      </toolbox>
+    </matlab>
+    <platform>
+      <unix>false</unix>
+      <mac>false</mac>
+      <windows>true</windows>
+      <win2k>false</win2k>
+      <winxp>false</winxp>
+      <vista>false</vista>
+      <linux>false</linux>
+      <solaris>false</solaris>
+      <osver>10.0</osver>
+      <os32>false</os32>
+      <os64>true</os64>
+      <arch>win64</arch>
+      <matlab>true</matlab>
+    </platform>
+  </configuration>
+</deployment-project>

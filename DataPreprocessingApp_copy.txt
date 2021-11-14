@@ -1,0 +1,1419 @@
+classdef DataPreprocessingApp < matlab.apps.AppBase
+
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure                      matlab.ui.Figure
+        GridLayout                    matlab.ui.container.GridLayout
+        LeftPanel                     matlab.ui.container.Panel
+        GridLeft                      matlab.ui.container.GridLayout
+        OpenRecordingsFolderButton    matlab.ui.control.Button
+        PanelLabelSample              matlab.ui.container.Panel
+        GridLabelSample               matlab.ui.container.GridLayout
+        UseAsLabelCheckBox            matlab.ui.control.CheckBox
+        UseAsDataSampleCheckBox       matlab.ui.control.CheckBox
+        PanelDataModifications        matlab.ui.container.Panel
+        GridDataModifications         matlab.ui.container.GridLayout
+        CheckBox_OffsetRelativeToStartValue  matlab.ui.control.CheckBox
+        CheckBox_CalculateDerivative  matlab.ui.control.CheckBox
+        CheckBox_NormalizeZeroToOne   matlab.ui.control.CheckBox
+        VectorNormCheckBox            matlab.ui.control.CheckBox
+        TreeRecordedObjects           matlab.ui.container.Tree
+        EditFieldFilterValue          matlab.ui.control.NumericEditField
+        InterpolateoverfiltervalueButton  matlab.ui.control.Button
+        CenterPanel                   matlab.ui.container.Panel
+        GridCenter                    matlab.ui.container.GridLayout
+        PanelLabels                   matlab.ui.container.Panel
+        GridLayout2                   matlab.ui.container.GridLayout
+        UIAxes_Labels                 matlab.ui.control.UIAxes
+        PanelSamples                  matlab.ui.container.Panel
+        GridLayout2_2                 matlab.ui.container.GridLayout
+        UIAxes_Samples                matlab.ui.control.UIAxes
+        RightPanel                    matlab.ui.container.Panel
+        GridRight                     matlab.ui.container.GridLayout
+        PanelExport                   matlab.ui.container.Panel
+        GridExport                    matlab.ui.container.GridLayout
+        ExportnameLabel               matlab.ui.control.Label
+        ExportNameEditField           matlab.ui.control.EditField
+        Export_IDLabel                matlab.ui.control.Label
+        ExportIDSpinner               matlab.ui.control.Spinner
+        ExportSelectedSnapshotButton  matlab.ui.control.Button
+        UITableSelectedSnapshots      matlab.ui.control.Table
+        AddnewsnapshotButton          matlab.ui.control.Button
+        OverlaySampleDataCheckBox     matlab.ui.control.CheckBox
+        ContextMenuDataLabels         matlab.ui.container.ContextMenu
+        StartMarkerMenu               matlab.ui.container.Menu
+        StopMarkerMenu                matlab.ui.container.Menu
+        ContextMenu                   matlab.ui.container.ContextMenu
+        DeleteSelectedMenu            matlab.ui.container.Menu
+        ContextMenu2                  matlab.ui.container.ContextMenu
+        InspectDataMenu               matlab.ui.container.Menu
+    end
+
+    % Properties that correspond to apps with auto-reflow
+    properties (Access = private)
+        onePanelWidth = 576;
+        twoPanelWidth = 768;
+    end
+
+    
+    properties (Access = private)
+        OpenRecordingsDialogTitle = 'Open Recordings Folder';% Title for: Open Recordings folder modal dialog box.
+        RecordingsFolder = ''; %Path to current recordings folder
+        SelectingFolder = false;
+        TreeNodes = {};
+        TreeObjectIds = [];
+        TreeObjectNames = [];
+        TreeObjectData = {};
+        ActiveObject = -1;
+        ActiveObjectDataType = -1;
+        ObjectProperties = [];
+        LegendNamesSamples = {};
+        LegendNamesLabels = {};
+        
+        DisplaySamples = {};
+        LatestDisplaySamples = 0;
+        DisplayLabels = {};
+        
+        USE_LABELS_INDEX = 1;
+        USE_SAMPELS_INDEX = 2;
+        OFFSET_RELATIVE_TO_START_INDEX = 3;
+        NORMALIZE_INDEX = 4;
+        CALCULATE_DERIVATIVE_INDEX = 5;
+        VECTOR_NORM_INDEX = 6;
+        
+        
+        SelectedSnapshots = []; % Changes when selecting cells in the snaphots table. each row holds indices for a cells: row, column
+        SnapShotLines = [];
+        START_LINE_COLOR = [0.05,0.41,0.02]; % Green
+        STOP_LINE_COLOR = [0.57,0.01,0.01]; % Red
+        GRAY_LINE_COLOR = [0.55, 0.55, 0.55]; % Gray
+        ExportFolder = ''; % Path to export folder, filled in after first export.
+        LABEL_IDENTIFIER = '[L] ';
+        SAMPLE_IDENTIFIER = '[S] ';
+    end
+    
+    methods (Access = private)
+        
+        function results = Load_CSV_Data(~, folder, file_name)
+            file_path = convertCharsToStrings([folder, '\', file_name]);
+            %fprintf("Reading csv file: %s\n", file_path);
+            results = readtable(file_path);
+        end
+        
+        function Save_CSV_Table(~, table, file_path)
+            writetable(table, file_path);
+        end
+        
+        function ResetVariables(app)
+            disableDefaultInteractivity(app.UIAxes_Labels);
+            app.UIAxes_Labels.Toolbar.Visible = 'off';
+            disableDefaultInteractivity(app.UIAxes_Samples);
+            app.UIAxes_Samples.Toolbar.Visible = 'off';
+            app.TreeNodes = {};
+            app.TreeObjectIds = [];
+            app.TreeObjectNames{1, 2} = [];
+            app.TreeObjectData{1, 4} = [];
+            app.ActiveObject = 1;
+            app.ActiveObjectDataType = -1;
+            app.ObjectProperties = [];
+            app.UITableSelectedSnapshots.Data = [];
+            app.SelectedSnapshots = [];
+            app.SnapShotLines = [];
+            items = get(app.UIAxes_Labels, 'Children');
+            delete(items(1:end));
+            items = get(app.UIAxes_Samples, 'Children');
+            delete(items(1:end));
+        end
+        
+        function ReplaceGraphSampleData(app)
+            app.ReplaceGraph(app.UIAxes_Samples, app.DisplaySamples);
+        end
+        
+        
+        function RefreashSettingsBoxes(app)
+            i = app.ActiveObject;
+            j = app.ActiveObjectDataType;
+            properties = app.ObjectProperties{i, 1};
+            if(app.ActiveObjectDataType ~= -1)
+                properties = app.ObjectProperties{i, 2}{j};
+            end
+            
+            state = properties{app.USE_LABELS_INDEX};
+            app.UseAsLabelCheckBox.Value = state;
+            
+            state = properties{app.USE_SAMPELS_INDEX};
+            app.UseAsDataSampleCheckBox.Value = state;
+            
+            state = properties{app.OFFSET_RELATIVE_TO_START_INDEX};
+            app.CheckBox_OffsetRelativeToStartValue.Value = state;
+            
+            state = properties{app.NORMALIZE_INDEX};
+            app.CheckBox_NormalizeZeroToOne.Value = state;
+            
+            state = properties{app.CALCULATE_DERIVATIVE_INDEX};
+            app.CheckBox_CalculateDerivative.Value = state;
+            
+            state = properties{app.VECTOR_NORM_INDEX};
+            app.VectorNormCheckBox.Value = state;
+            
+            drawnow;
+        end
+        
+        function SetObjectProperties(app, property_index, value)
+            if(app.ActiveObjectDataType == -1)
+                i = app.ActiveObject;
+                app.ObjectProperties{i, 1}{property_index} = value;
+                parent = app.TreeNodes{i, 1};
+                if(property_index == app.USE_LABELS_INDEX)
+                    if(value)
+                        if(startsWith(parent.Text,app.SAMPLE_IDENTIFIER))
+                            parent.Text = erase(parent.Text, app.SAMPLE_IDENTIFIER);
+                        end
+                        if(~startsWith(parent.Text,app.LABEL_IDENTIFIER))
+                            parent.Text = [app.LABEL_IDENTIFIER, parent.Text];
+                        end
+                    else
+                        if(startsWith(parent.Text,app.LABEL_IDENTIFIER))
+                            parent.Text = erase(parent.Text, app.LABEL_IDENTIFIER);
+                        end
+                    end
+                end
+                if(property_index == app.USE_SAMPELS_INDEX)
+                    if(value)
+                        if(startsWith(parent.Text,app.LABEL_IDENTIFIER))
+                            parent.Text = erase(parent.Text, app.LABEL_IDENTIFIER);
+                        end
+                        if(~startsWith(parent.Text,app.SAMPLE_IDENTIFIER))
+                            parent.Text = [app.SAMPLE_IDENTIFIER, parent.Text];
+                        end
+                    else
+                        if(startsWith(parent.Text,app.SAMPLE_IDENTIFIER))
+                            parent.Text = erase(parent.Text, app.SAMPLE_IDENTIFIER);
+                        end
+                    end
+                end
+                
+                c = app.TreeNodes{i, 2};
+                for j = 1:length(c)
+                    k = c{j}.NodeData(2);
+                    app.ObjectProperties{i, 2}{k}{property_index} = value;
+                    
+                    node = c{j};
+                    if(property_index == app.USE_LABELS_INDEX)
+                        if(value)
+                            if(startsWith(node.Text,app.SAMPLE_IDENTIFIER))
+                                node.Text = erase(node.Text, app.SAMPLE_IDENTIFIER);
+                            end
+                            if(~startsWith(node.Text,app.LABEL_IDENTIFIER))
+                                node.Text = [app.LABEL_IDENTIFIER, node.Text];
+                            end
+                            app.AddDisplayLabels(i, k);
+                        else
+                            if(startsWith(node.Text,app.LABEL_IDENTIFIER))
+                                node.Text = erase(node.Text, app.LABEL_IDENTIFIER);
+                            end
+                            app.RemoveDisplayLabels(i, k);
+                        end
+                    elseif(property_index == app.USE_SAMPELS_INDEX)
+                        if(value)
+                            if(startsWith(node.Text,app.LABEL_IDENTIFIER))
+                                node.Text = erase(node.Text, app.LABEL_IDENTIFIER);
+                            end
+                            if(~startsWith(node.Text,app.SAMPLE_IDENTIFIER))
+                                node.Text = [app.SAMPLE_IDENTIFIER, node.Text];
+                            end
+                            app.AddDisplaySamples(i, k);
+                        else
+                            if(startsWith(node.Text,app.SAMPLE_IDENTIFIER))
+                                node.Text = erase(node.Text, app.SAMPLE_IDENTIFIER);
+                            end
+                            app.RemoveDisplaySamples(i, k);
+                        end
+                    end
+                end
+            else
+                i = app.ActiveObject;
+                j = app.ActiveObjectDataType;
+                
+                parent = app.TreeNodes{i, 1};
+                if(startsWith(parent.Text,app.SAMPLE_IDENTIFIER))
+                    parent.Text = erase(parent.Text, app.SAMPLE_IDENTIFIER);
+                end
+                if(startsWith(parent.Text,app.LABEL_IDENTIFIER))
+                    parent.Text = erase(parent.Text, app.LABEL_IDENTIFIER);
+                end
+                
+                app.ObjectProperties{i, 2}{j}{property_index} = value;
+                node = app.TreeNodes{i, 2}{j};
+                if(property_index == app.USE_LABELS_INDEX)
+                    if(value)
+                        if(startsWith(node.Text,app.SAMPLE_IDENTIFIER))
+                            node.Text = erase(node.Text, app.SAMPLE_IDENTIFIER);
+                        end
+                        if(~startsWith(node.Text,app.LABEL_IDENTIFIER))
+                            node.Text = [app.LABEL_IDENTIFIER, node.Text];
+                        end
+                        app.AddDisplayLabels(i, j);
+                    else
+                        if(startsWith(node.Text,app.LABEL_IDENTIFIER))
+                            node.Text = erase(node.Text, app.LABEL_IDENTIFIER);
+                        end
+                        app.RemoveDisplayLabels(i, j);
+                    end
+                elseif(property_index == app.USE_SAMPELS_INDEX)
+                    if(value)
+                        if(startsWith(node.Text,app.LABEL_IDENTIFIER))
+                            node.Text = erase(node.Text, app.LABEL_IDENTIFIER);
+                        end
+                        if(~startsWith(node.Text,app.SAMPLE_IDENTIFIER))
+                            node.Text = [app.SAMPLE_IDENTIFIER, node.Text];
+                        end
+                        app.AddDisplaySamples(i, j);
+                    else
+                        if(startsWith(node.Text,app.SAMPLE_IDENTIFIER))
+                            node.Text = erase(node.Text, app.SAMPLE_IDENTIFIER);
+                        end
+                        app.RemoveDisplaySamples(i, j);
+                    end
+                end
+            end
+        end
+        
+        function ReplaceGraphLabelData(app)
+            app.ReplaceGraph(app.UIAxes_Labels, app.DisplayLabels);
+            hold(app.UIAxes_Labels, 'on');
+            app.RedrawMarkers();
+            hold(app.UIAxes_Labels, 'off');
+        end
+        
+        function AddDisplayLabels(app, object, object_type)
+            exist = false;
+            for i = 1:length(app.DisplayLabels)
+                if(app.DisplayLabels{i}{1} == object && app.DisplayLabels{i}{2} == object_type)
+                    exist = true;
+                    break;
+                end
+            end
+            if(~exist)
+                app.DisplayLabels{length(app.DisplayLabels) + 1} = {object, object_type};
+            end
+            
+            app.RemoveDisplaySamples(object, object_type);
+            
+            app.ReplaceGraphSampleData();
+            app.ReplaceGraphLabelData();
+        end
+        
+        function AddDisplaySamples(app, object, object_type)
+            if(~app.OverlaySampleDataCheckBox.Value)
+                app.DisplaySamples = {};
+                app.LatestDisplaySamples = 1;
+            end
+            
+            exist = false;
+            for i = 1:length(app.DisplaySamples)
+                if(app.DisplaySamples{i}{1} == object && app.DisplaySamples{i}{2} == object_type)
+                    app.LatestDisplaySamples = i;
+                    exist = true;
+                    break;
+                end
+            end
+            if(~exist)
+                i = length(app.DisplaySamples) + 1;
+                app.DisplaySamples{i} = {object, object_type};
+                app.LatestDisplaySamples = i;
+            end
+            
+            app.RemoveDisplayLabels(object, object_type);
+            
+            app.ReplaceGraphSampleData();
+            app.ReplaceGraphLabelData();
+        end
+        
+        function RemoveDisplayLabels(app, object, object_type)
+            exist = false;
+            for i = 1:length(app.DisplayLabels)
+                if(app.DisplayLabels{i}{1} == object && app.DisplayLabels{i}{2} == object_type)
+                    exist = true;
+                    break;
+                end
+            end
+            if(exist)
+                %remove from labels list
+                app.DisplayLabels(i) = [];
+            end
+            
+            app.ReplaceGraphLabelData();
+        end
+        
+        function RemoveDisplaySamples(app, object, object_type)
+            exist = false;
+            for i = 1:length(app.DisplaySamples)
+                if(app.DisplaySamples{i}{1} == object && app.DisplaySamples{i}{2} == object_type)
+                    exist = true;
+                    break;
+                end
+            end
+            if(exist)
+                %remove from samples list
+                if(app.LatestDisplaySamples == i)
+                     app.LatestDisplaySamples = 0;
+                end
+        
+                app.DisplaySamples(i) = [];
+            end
+            
+            app.ReplaceGraphSampleData();
+        end
+        
+        function result = process_data(app, y, time, do_normalize, do_offset_relative_to_start, do_calculate_derivative, do_vector_norm)
+            %Process data
+            if(do_vector_norm)
+                norm = sqrt(sum(y.^2, 2));
+                norm = repmat(norm, 1, size(y, 2));
+                y = y ./ norm;
+            end
+            
+            if(do_calculate_derivative)
+                y_prev = [y(1, :); y(1:end-1, :)];
+                time_prev = [-time(2); time(1:end-1)];
+                dt = (time - time_prev);
+                dt = repmat(dt,1, size(y, 2));
+                dy = (y-y_prev);
+        
+                y = dy ./ dt;
+            end
+        
+            
+            if(do_normalize)
+                y = (y - min(y)) ./ (max(y) - min(y));
+            end
+        
+            if(do_offset_relative_to_start)
+                y = y-y(1, :);
+            end
+            
+            y(isnan(y)) = 1;
+            y(y == inf) = 1;
+            result = y;
+        end
+        
+        function ReplaceGraph(app, graph, display_objects)
+            if(isempty(display_objects))
+                items = get(graph, 'Children');
+                delete(items(1:end));
+                return
+            end
+            LegendNames = {};
+            limits = [inf, -inf];
+            hold(graph,"off");
+            for k = 1:length(display_objects)
+                object = display_objects{k}{1};
+                data_type = display_objects{k}{2};
+                data = app.TreeObjectData{object, data_type};
+                names = data.Properties.VariableNames;
+                time = data.(names{1});
+                
+                do_normalize = app.ObjectProperties{object, 2}{data_type}{app.NORMALIZE_INDEX};
+                do_offset_relative_to_start = app.ObjectProperties{object, 2}{data_type}{app.OFFSET_RELATIVE_TO_START_INDEX};
+                do_calculate_derivative = app.ObjectProperties{object, 2}{data_type}{app.CALCULATE_DERIVATIVE_INDEX};
+                do_vector_norm = app.ObjectProperties{object, 2}{data_type}{app.VECTOR_NORM_INDEX};
+                
+                y_vec = [];
+                for i=2:length(names) %assumes first column is time
+                    y_vec = [y_vec, data.(names{i})];
+                end
+                y_vec = app.process_data(y_vec, time, do_normalize, do_offset_relative_to_start, do_calculate_derivative, do_vector_norm);
+                
+                for i=1:size(y_vec, 2)
+                    y = y_vec(:, i);
+                    %Set limits
+                    y_limits = [min(y), max(y)];
+                    if(y_limits(1) == y_limits(2))
+                        y_limits(1) = y_limits(1) - 0.5;
+                        y_limits(2) = y_limits(2) + 0.5;
+                    end
+                    
+                    diff = (y_limits(2) - y_limits(1)) * 0.05;
+                    y_limits(1) = y_limits(1) - diff;
+                    y_limits(2) = y_limits(2) + diff;
+                    
+                    if(y_limits(1) < limits(1))
+                        limits(1) = y_limits(1);
+                    end
+                    
+                    if(y_limits(2) > limits(2))
+                        limits(2) = y_limits(2);
+                    end
+                    
+                    
+                    %Plot
+                    plot(graph, time, y);
+                    hold(graph,'on');
+                    LegendNames{length(LegendNames) + 1} = names{i+1};
+                    xlim(graph, [time(1), time(end)]);
+                end
+            end
+            legend(graph, LegendNames, 'AutoUpdate','off');
+            ylim(graph, limits);
+            hold(graph,'off');
+        end
+        
+        function UpdateSelectionColors(app)
+            for i = 1:size(app.SnapShotLines, 1)
+                set(app.SnapShotLines(i, 1), 'Color', app.GRAY_LINE_COLOR);
+                set(app.SnapShotLines(i, 2), 'Color', app.GRAY_LINE_COLOR);
+                set(app.SnapShotLines(i, 1), 'LineWidth', 1);
+                set(app.SnapShotLines(i, 2), 'LineWidth', 1);
+            end
+            
+            for i = 1:size(app.SelectedSnapshots, 1)
+                row = app.SelectedSnapshots(i, 1);
+                set(app.SnapShotLines(row, 1), 'Color', app.START_LINE_COLOR);
+                set(app.SnapShotLines(row, 2), 'Color', app.STOP_LINE_COLOR);
+                
+                set(app.SnapShotLines(row, 1), 'LineWidth', 2);
+                set(app.SnapShotLines(row, 2), 'LineWidth', 2);
+                
+                set(app.SnapShotLines(row, 1), 'LineStyle', '-');
+                set(app.SnapShotLines(row, 2), 'Linestyle', '-');
+            end
+        end
+        
+        function RedrawMarkers(app)
+            app.SnapShotLines = [];
+            for(i = 1:size(app.UITableSelectedSnapshots.Data, 1))
+                start = app.UITableSelectedSnapshots.Data(i, 1);
+                stop = app.UITableSelectedSnapshots.Data(i, 2);
+                app.SnapShotLines(i, 1) = xline(app.UIAxes_Labels, start);
+                app.SnapShotLines(i, 2) = xline(app.UIAxes_Labels, stop);
+            end
+            app.UpdateSelectionColors();
+        end
+        
+        function results = GetAllSnapshotTables(app)
+            num_snapshots = size(app.UITableSelectedSnapshots.Data, 1);
+            full_table = false;
+            if(num_snapshots == 0)
+                num_snapshots = 1;
+                full_table = true;
+            end
+            results{num_snapshots, 2} = [];
+            
+            %traverse every node in tree and their child nodes,
+            %fill one samples-table & one labels-table
+            %apply all transformations
+            %divide into sub-tables for each snapshot pair, if non then full table.
+            
+            data = [];
+            label = [];
+            
+            data_names = [];
+            label_names = [];
+            
+            for(i = 1:size(app.TreeObjectNames, 1))
+                parent_name = app.TreeObjectNames{i, 1};
+                
+                for j = 1:size(app.TreeObjectNames{i, 2}, 1)
+                    do_use_labels = app.ObjectProperties{i, 2}{j}{app.USE_LABELS_INDEX};
+                    do_use_sampels = app.ObjectProperties{i, 2}{j}{app.USE_SAMPELS_INDEX};
+                    do_normalize = app.ObjectProperties{i, 2}{j}{app.NORMALIZE_INDEX};
+                    do_offset_relative_to_start = app.ObjectProperties{i, 2}{j}{app.OFFSET_RELATIVE_TO_START_INDEX};
+                    do_calculate_derivative = app.ObjectProperties{i, 2}{j}{app.CALCULATE_DERIVATIVE_INDEX};
+                    do_vector_norm = app.ObjectProperties{i, 2}{j}{app.VECTOR_NORM_INDEX};
+                    
+                    
+                    tabel_data = app.TreeObjectData{i, j};
+                    tabel_names = tabel_data.Properties.VariableNames;
+                    time = tabel_data.(tabel_names{1});
+                    type_name = app.TreeObjectNames{i, 2}{j};
+                    
+                    
+                    
+                    if(size(data, 2) == 0) % add time column only once, must be same for all files.
+                        data = [data, time];
+                        data_names = ["time"];
+                    end                    
+                    
+                    y_vec = [];
+                    for k=2:length(tabel_names) %assumes first column is time
+                        y_vec = [y_vec, tabel_data.(tabel_names{k})];
+                    end
+                    y_vec = app.process_data(y_vec, time, do_normalize, do_offset_relative_to_start, do_calculate_derivative, do_vector_norm);
+                
+                    for k=1:size(y_vec, 2)
+                        y = y_vec(:, k);
+                        
+                        name = sprintf("%s-%.*s-%d", parent_name, 3, type_name, k);
+                        
+                        if(do_use_labels == 1)
+                            label = [label, y];
+                            label_names = [label_names, name];
+                        end
+                        
+                        if(do_use_sampels == 1)
+                            column = size(data, 2) + 1;
+                            data = [data, y];
+                            data_names = [data_names, name];
+                        end
+                    end
+                end
+            end
+            
+            
+            if(full_table)
+                results{1, 1} = array2table(data, 'VariableNames', data_names);
+                results{1, 2} = array2table(label, 'VariableNames', label_names);
+                close all;
+                merged = [label , data];
+                merged_names = [label_names , data_names];
+                merged_table = array2table(merged, 'VariableNames', merged_names);
+                
+                
+                figure("Name",sprintf("Snapshot [%f-%f]", data(1,1), data(end,1)));
+                stackedplot(merged_table);
+            else
+                close all;
+                time = data(:, 1);
+                for i = 1:num_snapshots
+                    start_time = app.UITableSelectedSnapshots.Data(i, 1);
+                    stop_time = app.UITableSelectedSnapshots.Data(i, 2);
+                    
+                    [startValue, start] = min(abs(time-start_time));
+                    [stopValue, stop] = min(abs(time-stop_time));
+
+                    
+                    results{i, 1} = array2table(data(start:stop, :), 'VariableNames', data_names);
+                    results{i, 2} = array2table(label(start:stop, :), 'VariableNames', label_names);
+                    
+                    merged = [label(start:stop, :) , data(start:stop, :)];
+                    merged_names = [label_names , data_names];
+                    merged_table = array2table(merged, 'VariableNames', merged_names);
+                    
+                    figure("Name",sprintf("Snapshot_%d [%f-%f]", i, startValue, stopValue));
+                    stackedplot(merged_table);
+                end
+            end
+            
+            
+            export_data = results;
+            
+            
+            
+        end
+    end
+    
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Code that executes after component creation
+        function startupFcn(app)
+            app.ResetVariables();
+        end
+
+        % Button pushed function: OpenRecordingsFolderButton
+        function OpenRecordingsFolderButtonPushed(app, event)
+            if(app.SelectingFolder)
+                return;
+            end
+            
+            app.SelectingFolder = true; 
+            selected_folder = uigetdir(app.RecordingsFolder,app.OpenRecordingsDialogTitle);
+            app.SelectingFolder = false; 
+            figure(app.UIFigure);
+            if(selected_folder == 0)
+                %fprintf("[Error]: No folder selected!\n")
+                return;
+            end
+            
+            app.RecordingsFolder = selected_folder;            
+            folder_table_info = dir([app.RecordingsFolder, '\*.csv']);
+            
+            if(length(folder_table_info) >= 1)
+                app.ResetVariables();
+                
+                
+                for i = 1:length(folder_table_info)
+                    file_name = folder_table_info(i).name;
+                    filename_parts = split(folder_table_info(i).name, '_');
+                    
+                    object_id = str2num(filename_parts{1});
+                    object_name = [filename_parts{3}];
+                    
+                    %Keep _ inside the object name
+                    object_name_parts = filename_parts(3:(end-1));
+                    for i=2:length(object_name_parts)
+                        if(i <= length(object_name_parts))
+                            object_name = [object_name, '_', object_name_parts{i}];
+                        end
+                    end
+    
+                    %Fill the two arrays with object data.
+                    if ~(ismember(object_id, app.TreeObjectIds))
+                        app.TreeObjectIds(object_id + 1) = object_id;
+                        app.TreeObjectNames{object_id + 1, 1} = object_name;
+                    end
+                    
+                    %Add recording types
+                    index_recording_type = size(app.TreeObjectNames{object_id + 1, 2}, 1) + 1;
+                    app.TreeObjectNames{object_id + 1, 2}{index_recording_type, 1} = filename_parts{2};
+                    app.TreeObjectNames{object_id + 1, 2}{index_recording_type, 2} = file_name;
+                    app.TreeObjectData{object_id + 1, index_recording_type} = app.Load_CSV_Data(app.RecordingsFolder, file_name);
+                end
+                
+                app.TreeRecordedObjects.clo();
+                app.TreeNodes{size(app.TreeObjectNames, 1), 2} = [];
+                app.ObjectProperties{size(app.TreeObjectNames, 1), 2} = [];
+                for i = 1:size(app.TreeObjectNames, 1)
+                    %fprintf("%d \t[%d] \t: %s:\n", i, app.TreeObjectIds(i), app.TreeObjectNames{i, 1});
+                    app.TreeNodes{i, 1} = uitreenode(app.TreeRecordedObjects,'Text', app.TreeObjectNames{i, 1});
+                    app.TreeNodes{i, 1}.NodeData = [i];
+                    app.ObjectProperties{i, 1} = {false, false, false, false, false, false};
+                    for j = 1:size(app.TreeObjectNames{i, 2}, 1)
+                        
+                        app.TreeNodes{i, 2}{j} = uitreenode(app.TreeNodes{i, 1},'Text', app.TreeObjectNames{i, 2}{j, 1});
+                        app.TreeNodes{i, 2}{j}.NodeData = [i, j];
+                        app.ObjectProperties{i, 2}{j} = {false, false, false, false, false, false};
+                        %fprintf("\t%s:\t%s\n", app.TreeObjectNames{i, 2}{j}, app.TreeObjectNames{i, 2}{j, 2});
+                    end
+                end
+                
+                app.RefreashSettingsBoxes();
+            end
+        end
+
+        % Selection changed function: TreeRecordedObjects
+        function TreeRecordedObjectsSelectionChanged(app, event)
+            selectedNodes = app.TreeRecordedObjects.SelectedNodes;
+            
+            if(length(selectedNodes.NodeData) == 1)
+                if(selectedNodes.NodeData(1) ~= app.ActiveObject || (selectedNodes.NodeData(1) == app.ActiveObject && app.ActiveObjectDataType ~= -1))
+                    app.ActiveObject = selectedNodes.NodeData(1);
+                    app.ActiveObjectDataType = -1;
+                end
+            elseif(length(selectedNodes.NodeData) == 2)
+                if(selectedNodes.NodeData(2) ~= app.ActiveObjectDataType || selectedNodes.NodeData(1) ~= app.ActiveObject)
+                    app.ActiveObject = selectedNodes.NodeData(1);
+                    app.ActiveObjectDataType = selectedNodes.NodeData(2);
+                    
+                    if(app.ObjectProperties{app.ActiveObject, 2}{app.ActiveObjectDataType}{2})
+                        app.AddDisplaySamples(app.ActiveObject, app.ActiveObjectDataType);
+                    elseif(app.ObjectProperties{app.ActiveObject, 2}{app.ActiveObjectDataType}{1})
+                        app.AddDisplayLabels(app.ActiveObject, app.ActiveObjectDataType);
+                    end
+                end
+            end
+            app.RefreashSettingsBoxes();
+        end
+
+        % Changes arrangement of the app based on UIFigure width
+        function updateAppLayout(app, event)
+            currentFigureWidth = app.UIFigure.Position(3);
+            if(currentFigureWidth <= app.onePanelWidth)
+                % Change to a 3x1 grid
+                app.GridLayout.RowHeight = {690, 690, 690};
+                app.GridLayout.ColumnWidth = {'1x'};
+                app.CenterPanel.Layout.Row = 1;
+                app.CenterPanel.Layout.Column = 1;
+                app.LeftPanel.Layout.Row = 2;
+                app.LeftPanel.Layout.Column = 1;
+                app.RightPanel.Layout.Row = 3;
+                app.RightPanel.Layout.Column = 1;
+            elseif (currentFigureWidth > app.onePanelWidth && currentFigureWidth <= app.twoPanelWidth)
+                % Change to a 2x2 grid
+                app.GridLayout.RowHeight = {690, 690};
+                app.GridLayout.ColumnWidth = {'1x', '1x'};
+                app.CenterPanel.Layout.Row = 1;
+                app.CenterPanel.Layout.Column = [1,2];
+                app.LeftPanel.Layout.Row = 2;
+                app.LeftPanel.Layout.Column = 1;
+                app.RightPanel.Layout.Row = 2;
+                app.RightPanel.Layout.Column = 2;
+            else
+                % Change to a 1x3 grid
+                app.GridLayout.RowHeight = {'1x'};
+                app.GridLayout.ColumnWidth = {239, '1x', 236};
+                app.LeftPanel.Layout.Row = 1;
+                app.LeftPanel.Layout.Column = 1;
+                app.CenterPanel.Layout.Row = 1;
+                app.CenterPanel.Layout.Column = 2;
+                app.RightPanel.Layout.Row = 1;
+                app.RightPanel.Layout.Column = 3;
+            end
+        end
+
+        % Value changed function: UseAsLabelCheckBox
+        function UseAsLabelCheckBoxValueChanged(app, event)
+            value = app.UseAsLabelCheckBox.Value;
+            app.SetObjectProperties(app.USE_LABELS_INDEX, value);
+            if(value)
+                app.UseAsDataSampleCheckBox.Value = false;
+                app.SetObjectProperties(app.USE_SAMPELS_INDEX, false);
+            end
+        end
+
+        % Value changed function: UseAsDataSampleCheckBox
+        function UseAsDataSampleCheckBoxValueChanged(app, event)
+            value = app.UseAsDataSampleCheckBox.Value;
+            app.SetObjectProperties(app.USE_SAMPELS_INDEX, value);
+            if(value)
+                app.UseAsLabelCheckBox.Value = false;
+                app.SetObjectProperties(app.USE_LABELS_INDEX, false);
+            end
+        end
+
+        % Value changed function: 
+        % CheckBox_OffsetRelativeToStartValue
+        function CheckBox_OffsetRelativeToStartValueValueChanged(app, event)
+            value = app.CheckBox_OffsetRelativeToStartValue.Value;
+            app.SetObjectProperties(app.OFFSET_RELATIVE_TO_START_INDEX, value);
+            app.ReplaceGraphSampleData();
+            app.ReplaceGraphLabelData();
+        end
+
+        % Value changed function: CheckBox_NormalizeZeroToOne
+        function CheckBox_NormalizeZeroToOneValueChanged(app, event)
+            value = app.CheckBox_NormalizeZeroToOne.Value;
+            app.SetObjectProperties(app.NORMALIZE_INDEX, value);
+            %{
+            if(value)
+                app.VectorNormCheckBox.Value = false;
+                app.SetObjectProperties(app.VECTOR_NORM_INDEX, false);
+            end
+            %}
+            
+            app.ReplaceGraphSampleData();
+            app.ReplaceGraphLabelData();
+        end
+
+        % Value changed function: CheckBox_CalculateDerivative
+        function CheckBox_CalculateDerivativeValueChanged(app, event)
+            value = app.CheckBox_CalculateDerivative.Value;
+            app.SetObjectProperties(app.CALCULATE_DERIVATIVE_INDEX, value);
+            app.ReplaceGraphSampleData();
+            app.ReplaceGraphLabelData();
+        end
+
+        % Value changed function: OverlaySampleDataCheckBox
+        function OverlaySampleDataCheckBoxValueChanged(app, event)
+            value = app.OverlaySampleDataCheckBox.Value;
+            if(~value)
+                size = length(app.DisplaySamples);
+                for x = 1:size
+                    i = size - x + 1;
+                    if(i ~= app.LatestDisplaySamples)
+                        app.RemoveDisplaySamples(app.DisplaySamples{i}{1}, app.DisplaySamples{i}{2});
+                    else
+                        app.LatestDisplaySamples = 0;
+                    end
+                end
+                app.LatestDisplaySamples = length(app.DisplaySamples);
+            end
+        end
+
+        % Menu selected function: StartMarkerMenu
+        function StartMarkerMenuSelected(app, event)
+            p = get(app.UIAxes_Labels, 'CurrentPoint');
+            for i = 1:size(app.SelectedSnapshots, 1)
+                row = app.SelectedSnapshots(i, 1);
+                column = 1;
+                delete(app.SnapShotLines(row, column));
+                app.UITableSelectedSnapshots.Data(row, column) = p(1);
+                app.SnapShotLines(row, column) = xline(app.UIAxes_Labels, p(1));
+                
+                if(app.UITableSelectedSnapshots.Data(row, 1) > app.UITableSelectedSnapshots.Data(row, 2))
+                    temp = app.SnapShotLines(row, 1);
+                    app.SnapShotLines(row, 1) = app.SnapShotLines(row, 2);
+                    app.SnapShotLines(row, 2) = temp;
+                    
+                    temp = app.UITableSelectedSnapshots.Data(row, 1);
+                    app.UITableSelectedSnapshots.Data(row, 1) = app.UITableSelectedSnapshots.Data(row, 2);
+                    app.UITableSelectedSnapshots.Data(row, 2) = temp;
+                end
+                app.UpdateSelectionColors();
+            end
+        end
+
+        % Menu selected function: StopMarkerMenu
+        function StopMarkerMenuSelected(app, event)
+            p = get(app.UIAxes_Labels, 'CurrentPoint');
+            for i = 1:size(app.SelectedSnapshots, 1)
+                row = app.SelectedSnapshots(i, 1);
+                column = 2;
+                delete(app.SnapShotLines(row, column));
+                app.UITableSelectedSnapshots.Data(row, column) = p(1);
+                app.SnapShotLines(row, column) = xline(app.UIAxes_Labels, p(1));
+                
+                if(app.UITableSelectedSnapshots.Data(row, 1) > app.UITableSelectedSnapshots.Data(row, 2))
+                    temp = app.SnapShotLines(row, 1);
+                    app.SnapShotLines(row, 1) = app.SnapShotLines(row, 2);
+                    app.SnapShotLines(row, 2) = temp;
+                    
+                    temp = app.UITableSelectedSnapshots.Data(row, 1);
+                    app.UITableSelectedSnapshots.Data(row, 1) = app.UITableSelectedSnapshots.Data(row, 2);
+                    app.UITableSelectedSnapshots.Data(row, 2) = temp;
+                end
+                app.UpdateSelectionColors();
+            end
+        end
+
+        % Button pushed function: AddnewsnapshotButton
+        function AddnewsnapshotButtonPushed(app, event)
+            limits = app.UIAxes_Labels.XLim;
+            diff = (limits(2) - limits(1)) * 0.05;
+            start = app.UIAxes_Labels.XLim(1) + diff;
+            stop = app.UIAxes_Labels.XLim(2) - diff;
+            index = size(app.SnapShotLines, 1) + 1;
+            app.SnapShotLines(index, 1) = xline(app.UIAxes_Labels, start,'--', 'Color', app.START_LINE_COLOR);
+            app.SnapShotLines(index, 2) = xline(app.UIAxes_Labels, stop,'--', 'Color', app.STOP_LINE_COLOR);
+            app.UITableSelectedSnapshots.Data = [app.UITableSelectedSnapshots.Data; start, stop];
+            app.SelectedSnapshots = [index, 1];
+            app.UpdateSelectionColors();
+        end
+
+        % Cell selection callback: UITableSelectedSnapshots
+        function UITableSelectedSnapshotsCellSelection(app, event)
+            indices = event.Indices;
+            app.SelectedSnapshots = indices;
+            app.UpdateSelectionColors();
+        end
+
+        % Menu selected function: DeleteSelectedMenu
+        function DeleteSelectedMenuSelected(app, event)
+            DeleteRows = [];
+            prev_row = 0;
+            for(i = 1:size(app.SelectedSnapshots, 1))
+                row = app.SelectedSnapshots(i, 1);
+                if(row ~= prev_row)
+                    DeleteRows = [DeleteRows, row];
+                    prev_row = row;
+                end
+            end
+            app.UITableSelectedSnapshots.Data(DeleteRows, :) = [];
+            delete(app.SnapShotLines(DeleteRows, :));
+            app.SnapShotLines(DeleteRows, :) = [];
+            app.SelectedSnapshots = [];
+            if(size(app.UITableSelectedSnapshots.Data, 1) > 0)
+                app.SelectedSnapshots = [size(app.UITableSelectedSnapshots.Data, 1), 1];
+            end
+            app.UpdateSelectionColors();
+        end
+
+        % Cell edit callback: UITableSelectedSnapshots
+        function UITableSelectedSnapshotsCellEdit(app, event)
+            indices = event.Indices;
+            newData = event.NewData;
+            for i = 1:size(indices, 1)
+                row = indices(i, 1);
+                column = indices(i, 2);
+                
+                delete(app.SnapShotLines(row, column));
+                app.UITableSelectedSnapshots.Data(row, column) = newData(i);
+                app.SnapShotLines(row, column) = xline(app.UIAxes_Labels, newData(i));
+                
+                if(app.UITableSelectedSnapshots.Data(row, 1) > app.UITableSelectedSnapshots.Data(row, 2))
+                    temp = app.SnapShotLines(row, 1);
+                    app.SnapShotLines(row, 1) = app.SnapShotLines(row, 2);
+                    app.SnapShotLines(row, 2) = temp;
+                    
+                    temp = app.UITableSelectedSnapshots.Data(row, 1);
+                    app.UITableSelectedSnapshots.Data(row, 1) = app.UITableSelectedSnapshots.Data(row, 2);
+                    app.UITableSelectedSnapshots.Data(row, 2) = temp;
+                end
+                app.UpdateSelectionColors();
+            end
+            
+        end
+
+        % Button pushed function: ExportSelectedSnapshotButton
+        function ExportSelectedSnapshotButtonPushed(app, event)
+            if(app.SelectingFolder || isempty(app.ExportNameEditField.Value))
+                return;
+            end
+            
+            app.SelectingFolder = true; 
+            selected_folder = uigetdir(app.ExportFolder,app.OpenRecordingsDialogTitle);
+            app.SelectingFolder = false; 
+            figure(app.UIFigure);
+            if(selected_folder == 0)
+                %fprintf("[Error]: No folder selected!\n")
+                return;
+            end
+            
+            app.ExportFolder = selected_folder;
+            
+            %Create folder to export all snapshots to
+            new_save_folder = sprintf("%s_%.2i", app.ExportNameEditField.Value, app.ExportIDSpinner.Value);
+            folder_table_info = dir([app.ExportFolder, '\']);
+            for(i = 1:length(folder_table_info))
+                existing_file_name = folder_table_info(i).name;
+                if(existing_file_name == new_save_folder)
+                    app.ExportIDSpinner.Value = app.ExportIDSpinner.Value + 1;
+                    new_save_folder = sprintf("%s_%.2i", app.ExportNameEditField.Value, app.ExportIDSpinner.Value);
+                    i = 1;
+                end
+            end
+            new_save_folder = fullfile(app.ExportFolder, new_save_folder);
+            mkdir(new_save_folder);
+            
+            %Save all snapshots
+            export_tabels = app.GetAllSnapshotTables();
+            for(k = 1:size(export_tabels, 1))
+                export_data_table = export_tabels{k, 1}; %First column is time. Time applies for both data and label tables.
+                export_label_table = export_tabels{k, 2}; %Doesn't have the first column time.
+                start_time = export_data_table.('time')(1);
+                stop_time = export_data_table.('time')(end); %export_data_table.Column{1}(end);
+                
+                %Save data file
+                data_filename = sprintf("%d_Data_%s_%d_%2.2f-%2.2f.csv", k, app.ExportNameEditField.Value, app.ExportIDSpinner.Value, start_time, stop_time);
+                data_filename = fullfile(new_save_folder, data_filename);
+                app.Save_CSV_Table(export_data_table, data_filename);
+                
+                %Save label file
+                label_filename = sprintf("%d_Label_%s_%d_%2.2f-%2.2f.csv", k, app.ExportNameEditField.Value, app.ExportIDSpinner.Value, start_time, stop_time);
+                label_filename = fullfile(new_save_folder, label_filename);
+                app.Save_CSV_Table(export_label_table, label_filename);
+            end
+            
+
+            app.ExportIDSpinner.Value = app.ExportIDSpinner.Value + 1;
+        end
+
+        % Value changing function: ExportNameEditField
+        function ExportNameEditFieldValueChanging(app, event)
+            BAD_FILTER = ['/';'\';':';'*';'?';'"';'<';'>';'|';'.';'_';char("'"); '&'; '%'; '¤'];
+            app.ExportNameEditField.Value(ismember(app.ExportNameEditField.Value, BAD_FILTER)) = [];
+        end
+
+        % Value changed function: ExportNameEditField
+        function ExportNameEditFieldValueChanged(app, event)
+            BAD_FILTER = ['/';'\';':';'*';'?';'"';'<';'>';'|';'.';'_';char("'"); '&'; '%'; '¤'];
+            app.ExportNameEditField.Value(ismember(app.ExportNameEditField.Value, BAD_FILTER)) = [];
+        end
+
+        % Value changed function: VectorNormCheckBox
+        function VectorNormCheckBoxValueChanged(app, event)
+            value = app.VectorNormCheckBox.Value;
+            app.SetObjectProperties(app.VECTOR_NORM_INDEX, value);
+            %{
+            if(value)
+                app.CheckBox_NormalizeZeroToOne.Value = false;
+                app.SetObjectProperties(app.NORMALIZE_INDEX, false);
+            end
+            %}
+            app.ReplaceGraphSampleData();
+            app.ReplaceGraphLabelData();
+        end
+
+        % Menu selected function: InspectDataMenu
+        function InspectDataMenuSelected(app, event)
+            
+            close all;
+            lines = get(app.UIAxes_Samples, 'Children');
+            xdata = get(lines, 'XData');
+            ydata = get(lines, 'YData')';
+            data = ydata(:);
+            data_table = array2table(cell2mat(data)');
+            stackedplot(data_table);
+        end
+
+        % Button pushed function: InterpolateoverfiltervalueButton
+        function InterpolateoverfiltervalueButtonPushed(app, event)
+            fig = app.UIFigure;
+            filter_value = app.EditFieldFilterValue.Value;
+            selection = uiconfirm(fig, ['Interpolate values for all data points equal to filter-value=', num2str(filter_value), ', [Warning permanent!]'],'Confirm Close', 'Icon','warning');
+            
+            if(selection == 'OK')
+                
+                for(i = 1:size(app.DisplaySamples, 1))
+                    object = app.DisplaySamples{i}{1};
+                    object_type = app.DisplaySamples{i}{2};
+                    
+                    for(j = 2:size(app.TreeObjectData{object, object_type}, 2))
+                        start_value = 0;
+                        stop_value = 0;
+                        
+                        start_index = 0;
+                        stop_index = 0;
+                        data = app.TreeObjectData{object, object_type}{:, j};
+                        for (index = 1:length(data))
+                            if(data(index) == filter_value)
+                                if(start_index == 0)
+                                    start_index = index;
+                                end
+                            else
+                                if(start_index ~= 0)
+                                    stop_index = index;
+                                    if(start_index-1 > 0)
+                                        start_index = start_index - 1;
+                                        start_value = data(start_index, 1);
+                                        stop_value = data(stop_index, 1);
+                                        
+                                        num_steps = stop_index - start_index + 1;
+                                        interpolated_data = linspace(start_value, stop_value, num_steps)';
+                                        data(start_index:stop_index, 1) = interpolated_data;
+                                        app.TreeObjectData{object, object_type}{:, j} = data;
+                                    end
+                                    start_index = 0;
+                                end
+                            end
+                        end
+                    end
+                end
+                app.ReplaceGraphSampleData();
+            end
+            
+            
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.AutoResizeChildren = 'off';
+            app.UIFigure.Position = [100 100 1160 690];
+            app.UIFigure.Name = 'MATLAB App';
+            app.UIFigure.SizeChangedFcn = createCallbackFcn(app, @updateAppLayout, true);
+
+            % Create GridLayout
+            app.GridLayout = uigridlayout(app.UIFigure);
+            app.GridLayout.ColumnWidth = {239, '1x', 236};
+            app.GridLayout.RowHeight = {'1x'};
+            app.GridLayout.ColumnSpacing = 0;
+            app.GridLayout.RowSpacing = 0;
+            app.GridLayout.Padding = [0 0 0 0];
+            app.GridLayout.Scrollable = 'on';
+
+            % Create LeftPanel
+            app.LeftPanel = uipanel(app.GridLayout);
+            app.LeftPanel.Layout.Row = 1;
+            app.LeftPanel.Layout.Column = 1;
+
+            % Create GridLeft
+            app.GridLeft = uigridlayout(app.LeftPanel);
+            app.GridLeft.ColumnWidth = {'4x', '1x'};
+            app.GridLeft.RowHeight = {'2x', '32x', '2x', '4x', '8x'};
+
+            % Create OpenRecordingsFolderButton
+            app.OpenRecordingsFolderButton = uibutton(app.GridLeft, 'push');
+            app.OpenRecordingsFolderButton.ButtonPushedFcn = createCallbackFcn(app, @OpenRecordingsFolderButtonPushed, true);
+            app.OpenRecordingsFolderButton.Layout.Row = 1;
+            app.OpenRecordingsFolderButton.Layout.Column = [1 2];
+            app.OpenRecordingsFolderButton.Text = 'Open Recordings Folder';
+
+            % Create PanelLabelSample
+            app.PanelLabelSample = uipanel(app.GridLeft);
+            app.PanelLabelSample.Layout.Row = 4;
+            app.PanelLabelSample.Layout.Column = [1 2];
+
+            % Create GridLabelSample
+            app.GridLabelSample = uigridlayout(app.PanelLabelSample);
+            app.GridLabelSample.ColumnWidth = {'2x', '3x'};
+            app.GridLabelSample.Padding = [2 2 2 2];
+
+            % Create UseAsLabelCheckBox
+            app.UseAsLabelCheckBox = uicheckbox(app.GridLabelSample);
+            app.UseAsLabelCheckBox.ValueChangedFcn = createCallbackFcn(app, @UseAsLabelCheckBoxValueChanged, true);
+            app.UseAsLabelCheckBox.Text = 'Use as Label';
+            app.UseAsLabelCheckBox.FontWeight = 'bold';
+            app.UseAsLabelCheckBox.Layout.Row = 1;
+            app.UseAsLabelCheckBox.Layout.Column = [1 2];
+
+            % Create UseAsDataSampleCheckBox
+            app.UseAsDataSampleCheckBox = uicheckbox(app.GridLabelSample);
+            app.UseAsDataSampleCheckBox.ValueChangedFcn = createCallbackFcn(app, @UseAsDataSampleCheckBoxValueChanged, true);
+            app.UseAsDataSampleCheckBox.Text = 'Use as Data Sample';
+            app.UseAsDataSampleCheckBox.FontWeight = 'bold';
+            app.UseAsDataSampleCheckBox.Layout.Row = 2;
+            app.UseAsDataSampleCheckBox.Layout.Column = [1 2];
+
+            % Create PanelDataModifications
+            app.PanelDataModifications = uipanel(app.GridLeft);
+            app.PanelDataModifications.Layout.Row = 5;
+            app.PanelDataModifications.Layout.Column = [1 2];
+
+            % Create GridDataModifications
+            app.GridDataModifications = uigridlayout(app.PanelDataModifications);
+            app.GridDataModifications.ColumnWidth = {'4x', '3x'};
+            app.GridDataModifications.RowHeight = {'1x', '1x', '1x'};
+            app.GridDataModifications.Padding = [2 2 2 2];
+
+            % Create CheckBox_OffsetRelativeToStartValue
+            app.CheckBox_OffsetRelativeToStartValue = uicheckbox(app.GridDataModifications);
+            app.CheckBox_OffsetRelativeToStartValue.ValueChangedFcn = createCallbackFcn(app, @CheckBox_OffsetRelativeToStartValueValueChanged, true);
+            app.CheckBox_OffsetRelativeToStartValue.Text = 'Offset relative to Start value';
+            app.CheckBox_OffsetRelativeToStartValue.Layout.Row = 1;
+            app.CheckBox_OffsetRelativeToStartValue.Layout.Column = [1 2];
+
+            % Create CheckBox_CalculateDerivative
+            app.CheckBox_CalculateDerivative = uicheckbox(app.GridDataModifications);
+            app.CheckBox_CalculateDerivative.ValueChangedFcn = createCallbackFcn(app, @CheckBox_CalculateDerivativeValueChanged, true);
+            app.CheckBox_CalculateDerivative.Text = 'Calculate derivative';
+            app.CheckBox_CalculateDerivative.Layout.Row = 3;
+            app.CheckBox_CalculateDerivative.Layout.Column = [1 2];
+
+            % Create CheckBox_NormalizeZeroToOne
+            app.CheckBox_NormalizeZeroToOne = uicheckbox(app.GridDataModifications);
+            app.CheckBox_NormalizeZeroToOne.ValueChangedFcn = createCallbackFcn(app, @CheckBox_NormalizeZeroToOneValueChanged, true);
+            app.CheckBox_NormalizeZeroToOne.Text = 'Normalize 0 - 1';
+            app.CheckBox_NormalizeZeroToOne.Layout.Row = 2;
+            app.CheckBox_NormalizeZeroToOne.Layout.Column = 1;
+
+            % Create VectorNormCheckBox
+            app.VectorNormCheckBox = uicheckbox(app.GridDataModifications);
+            app.VectorNormCheckBox.ValueChangedFcn = createCallbackFcn(app, @VectorNormCheckBoxValueChanged, true);
+            app.VectorNormCheckBox.Text = 'Vector Norm';
+            app.VectorNormCheckBox.Layout.Row = 2;
+            app.VectorNormCheckBox.Layout.Column = 2;
+
+            % Create TreeRecordedObjects
+            app.TreeRecordedObjects = uitree(app.GridLeft);
+            app.TreeRecordedObjects.SelectionChangedFcn = createCallbackFcn(app, @TreeRecordedObjectsSelectionChanged, true);
+            app.TreeRecordedObjects.Layout.Row = 2;
+            app.TreeRecordedObjects.Layout.Column = [1 2];
+
+            % Create EditFieldFilterValue
+            app.EditFieldFilterValue = uieditfield(app.GridLeft, 'numeric');
+            app.EditFieldFilterValue.Tooltip = {'Select filter-value.'; 'All data points equal to the filter-value will be intorpolated from it''s closest neighbors not equal to the filter-value.'};
+            app.EditFieldFilterValue.Layout.Row = 3;
+            app.EditFieldFilterValue.Layout.Column = 2;
+
+            % Create InterpolateoverfiltervalueButton
+            app.InterpolateoverfiltervalueButton = uibutton(app.GridLeft, 'push');
+            app.InterpolateoverfiltervalueButton.ButtonPushedFcn = createCallbackFcn(app, @InterpolateoverfiltervalueButtonPushed, true);
+            app.InterpolateoverfiltervalueButton.Layout.Row = 3;
+            app.InterpolateoverfiltervalueButton.Layout.Column = 1;
+            app.InterpolateoverfiltervalueButton.Text = 'Interpolate over filter-value:';
+
+            % Create CenterPanel
+            app.CenterPanel = uipanel(app.GridLayout);
+            app.CenterPanel.Layout.Row = 1;
+            app.CenterPanel.Layout.Column = 2;
+
+            % Create GridCenter
+            app.GridCenter = uigridlayout(app.CenterPanel);
+            app.GridCenter.ColumnWidth = {'1x'};
+            app.GridCenter.RowSpacing = 1;
+            app.GridCenter.Padding = [5 5 5 5];
+
+            % Create PanelLabels
+            app.PanelLabels = uipanel(app.GridCenter);
+            app.PanelLabels.Layout.Row = 1;
+            app.PanelLabels.Layout.Column = 1;
+
+            % Create GridLayout2
+            app.GridLayout2 = uigridlayout(app.PanelLabels);
+            app.GridLayout2.ColumnWidth = {'1x'};
+            app.GridLayout2.RowHeight = {'1x'};
+            app.GridLayout2.Padding = [0 0 0 0];
+
+            % Create UIAxes_Labels
+            app.UIAxes_Labels = uiaxes(app.GridLayout2);
+            title(app.UIAxes_Labels, 'Data Labels')
+            xlabel(app.UIAxes_Labels, 'time')
+            ylabel(app.UIAxes_Labels, '')
+            app.UIAxes_Labels.XLim = [0 1];
+            app.UIAxes_Labels.YLim = [0 1];
+            app.UIAxes_Labels.Box = 'on';
+            app.UIAxes_Labels.BoxStyle = 'full';
+            app.UIAxes_Labels.YTick = [0 0.2 0.4 0.6 0.8 1];
+            app.UIAxes_Labels.YTickLabel = {'0'; '0.2'; '0.4'; '0.6'; '0.8'; '1'};
+            app.UIAxes_Labels.YGrid = 'on';
+            app.UIAxes_Labels.BusyAction = 'cancel';
+            app.UIAxes_Labels.Layout.Row = 1;
+            app.UIAxes_Labels.Layout.Column = 1;
+
+            % Create PanelSamples
+            app.PanelSamples = uipanel(app.GridCenter);
+            app.PanelSamples.Layout.Row = 2;
+            app.PanelSamples.Layout.Column = 1;
+
+            % Create GridLayout2_2
+            app.GridLayout2_2 = uigridlayout(app.PanelSamples);
+            app.GridLayout2_2.ColumnWidth = {'1x'};
+            app.GridLayout2_2.RowHeight = {'1x'};
+            app.GridLayout2_2.Padding = [0 0 0 0];
+
+            % Create UIAxes_Samples
+            app.UIAxes_Samples = uiaxes(app.GridLayout2_2);
+            title(app.UIAxes_Samples, 'Data Samples')
+            xlabel(app.UIAxes_Samples, 'time')
+            ylabel(app.UIAxes_Samples, '')
+            app.UIAxes_Samples.XLim = [0 1];
+            app.UIAxes_Samples.YLim = [0 1];
+            app.UIAxes_Samples.Box = 'on';
+            app.UIAxes_Samples.YTick = [0 0.2 0.4 0.6 0.8 1];
+            app.UIAxes_Samples.YTickLabel = {'0'; '0.2'; '0.4'; '0.6'; '0.8'; '1'};
+            app.UIAxes_Samples.YGrid = 'on';
+            app.UIAxes_Samples.Layout.Row = 1;
+            app.UIAxes_Samples.Layout.Column = 1;
+
+            % Create RightPanel
+            app.RightPanel = uipanel(app.GridLayout);
+            app.RightPanel.BorderType = 'none';
+            app.RightPanel.HandleVisibility = 'off';
+            app.RightPanel.BusyAction = 'cancel';
+            app.RightPanel.Interruptible = 'off';
+            app.RightPanel.Layout.Row = 1;
+            app.RightPanel.Layout.Column = 3;
+
+            % Create GridRight
+            app.GridRight = uigridlayout(app.RightPanel);
+            app.GridRight.ColumnWidth = {'1x'};
+            app.GridRight.RowHeight = {'1x', '18x', '8x'};
+            app.GridRight.Padding = [6.5 10 6.5 10];
+
+            % Create PanelExport
+            app.PanelExport = uipanel(app.GridRight);
+            app.PanelExport.BackgroundColor = [0.902 0.902 0.902];
+            app.PanelExport.BusyAction = 'cancel';
+            app.PanelExport.Layout.Row = 3;
+            app.PanelExport.Layout.Column = 1;
+
+            % Create GridExport
+            app.GridExport = uigridlayout(app.PanelExport);
+            app.GridExport.ColumnWidth = {'2x', '3x'};
+            app.GridExport.RowHeight = {'2x', '2x', '2x', '3x'};
+            app.GridExport.Padding = [2 2 2 2];
+
+            % Create ExportnameLabel
+            app.ExportnameLabel = uilabel(app.GridExport);
+            app.ExportnameLabel.FontWeight = 'bold';
+            app.ExportnameLabel.Layout.Row = 2;
+            app.ExportnameLabel.Layout.Column = 1;
+            app.ExportnameLabel.Text = 'Export name:';
+
+            % Create ExportNameEditField
+            app.ExportNameEditField = uieditfield(app.GridExport, 'text');
+            app.ExportNameEditField.ValueChangedFcn = createCallbackFcn(app, @ExportNameEditFieldValueChanged, true);
+            app.ExportNameEditField.ValueChangingFcn = createCallbackFcn(app, @ExportNameEditFieldValueChanging, true);
+            app.ExportNameEditField.Layout.Row = 2;
+            app.ExportNameEditField.Layout.Column = 2;
+            app.ExportNameEditField.Value = 'ExportData';
+
+            % Create Export_IDLabel
+            app.Export_IDLabel = uilabel(app.GridExport);
+            app.Export_IDLabel.FontWeight = 'bold';
+            app.Export_IDLabel.Layout.Row = 3;
+            app.Export_IDLabel.Layout.Column = 1;
+            app.Export_IDLabel.Text = 'Export_ID:';
+
+            % Create ExportIDSpinner
+            app.ExportIDSpinner = uispinner(app.GridExport);
+            app.ExportIDSpinner.Limits = [0 Inf];
+            app.ExportIDSpinner.HorizontalAlignment = 'left';
+            app.ExportIDSpinner.Layout.Row = 3;
+            app.ExportIDSpinner.Layout.Column = 2;
+
+            % Create ExportSelectedSnapshotButton
+            app.ExportSelectedSnapshotButton = uibutton(app.GridExport, 'push');
+            app.ExportSelectedSnapshotButton.ButtonPushedFcn = createCallbackFcn(app, @ExportSelectedSnapshotButtonPushed, true);
+            app.ExportSelectedSnapshotButton.FontWeight = 'bold';
+            app.ExportSelectedSnapshotButton.Layout.Row = 1;
+            app.ExportSelectedSnapshotButton.Layout.Column = [1 2];
+            app.ExportSelectedSnapshotButton.Text = 'Export selected snapshot';
+
+            % Create UITableSelectedSnapshots
+            app.UITableSelectedSnapshots = uitable(app.GridRight);
+            app.UITableSelectedSnapshots.ColumnName = {'Start'; 'Stop'};
+            app.UITableSelectedSnapshots.RowName = {};
+            app.UITableSelectedSnapshots.ColumnEditable = true;
+            app.UITableSelectedSnapshots.CellEditCallback = createCallbackFcn(app, @UITableSelectedSnapshotsCellEdit, true);
+            app.UITableSelectedSnapshots.CellSelectionCallback = createCallbackFcn(app, @UITableSelectedSnapshotsCellSelection, true);
+            app.UITableSelectedSnapshots.Layout.Row = 2;
+            app.UITableSelectedSnapshots.Layout.Column = 1;
+
+            % Create AddnewsnapshotButton
+            app.AddnewsnapshotButton = uibutton(app.GridRight, 'push');
+            app.AddnewsnapshotButton.ButtonPushedFcn = createCallbackFcn(app, @AddnewsnapshotButtonPushed, true);
+            app.AddnewsnapshotButton.Layout.Row = 1;
+            app.AddnewsnapshotButton.Layout.Column = 1;
+            app.AddnewsnapshotButton.Text = 'Add new snapshot';
+
+            % Create OverlaySampleDataCheckBox
+            app.OverlaySampleDataCheckBox = uicheckbox(app.UIFigure);
+            app.OverlaySampleDataCheckBox.ValueChangedFcn = createCallbackFcn(app, @OverlaySampleDataCheckBoxValueChanged, true);
+            app.OverlaySampleDataCheckBox.BusyAction = 'cancel';
+            app.OverlaySampleDataCheckBox.Text = 'Overlay Sample Data';
+            app.OverlaySampleDataCheckBox.FontWeight = 'bold';
+            app.OverlaySampleDataCheckBox.Position = [768 323 141 22];
+
+            % Create ContextMenuDataLabels
+            app.ContextMenuDataLabels = uicontextmenu(app.UIFigure);
+            
+            % Assign app.ContextMenuDataLabels
+            app.UIAxes_Labels.ContextMenu = app.ContextMenuDataLabels;
+
+            % Create StartMarkerMenu
+            app.StartMarkerMenu = uimenu(app.ContextMenuDataLabels);
+            app.StartMarkerMenu.MenuSelectedFcn = createCallbackFcn(app, @StartMarkerMenuSelected, true);
+            app.StartMarkerMenu.ForegroundColor = [0.051 0.4118 0.0196];
+            app.StartMarkerMenu.Text = 'Start Marker';
+
+            % Create StopMarkerMenu
+            app.StopMarkerMenu = uimenu(app.ContextMenuDataLabels);
+            app.StopMarkerMenu.MenuSelectedFcn = createCallbackFcn(app, @StopMarkerMenuSelected, true);
+            app.StopMarkerMenu.ForegroundColor = [0.5686 0.0118 0.0118];
+            app.StopMarkerMenu.Text = 'Stop Marker';
+
+            % Create ContextMenu
+            app.ContextMenu = uicontextmenu(app.UIFigure);
+            
+            % Assign app.ContextMenu
+            app.UITableSelectedSnapshots.ContextMenu = app.ContextMenu;
+
+            % Create DeleteSelectedMenu
+            app.DeleteSelectedMenu = uimenu(app.ContextMenu);
+            app.DeleteSelectedMenu.MenuSelectedFcn = createCallbackFcn(app, @DeleteSelectedMenuSelected, true);
+            app.DeleteSelectedMenu.Text = 'DeleteSelected';
+
+            % Create ContextMenu2
+            app.ContextMenu2 = uicontextmenu(app.UIFigure);
+            
+            % Assign app.ContextMenu2
+            app.UIAxes_Samples.ContextMenu = app.ContextMenu2;
+
+            % Create InspectDataMenu
+            app.InspectDataMenu = uimenu(app.ContextMenu2);
+            app.InspectDataMenu.MenuSelectedFcn = createCallbackFcn(app, @InspectDataMenuSelected, true);
+            app.InspectDataMenu.Text = 'InspectData';
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = DataPreprocessingApp
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.UIFigure)
+
+            % Execute the startup function
+            runStartupFcn(app, @startupFcn)
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end
